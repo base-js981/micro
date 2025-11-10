@@ -1,0 +1,27 @@
+{
+  "name": "@micro/root",
+  "version": "1.0.0",
+  "description": "Microservices monorepo",
+  "private": true,
+  "scripts": {
+    "build": "pnpm -r run build",
+    "build:auth": "cd services/auth-service && pnpm run build",
+    "build:file-storage": "cd services/file-storage-service && pnpm run build",
+    "start:dev": "docker-compose up",
+    "start:dev:auth": "cd services/auth-service && pnpm run start:dev",
+    "start:dev:file-storage": "cd services/file-storage-service && pnpm run start:dev",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint",
+    "format": "prettier --write \"**/*.{ts,js,json,md}\"",
+    "prisma:generate": "pnpm -F @micro/database run generate",
+    "prisma:migrate": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm -F @micro/database exec prisma migrate dev'",
+    "prisma:migrate:deploy": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm -F @micro/database exec prisma migrate deploy'",
+    "prisma:migrate:status": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm -F @micro/database exec prisma migrate status'",
+    "prisma:studio": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm -F @micro/database exec prisma studio'",
+    "prisma:seed": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm -F @micro/database run seed'"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^11.0.0",
+    "prettier": "^3.0.0"
+  }
+}

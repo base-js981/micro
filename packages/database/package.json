@@ -1,0 +1,24 @@
+{
+  "name": "@micro/database",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "main": "./generated/client/index.js",
+  "types": "./generated/client/index.d.ts",
+  "files": [
+    "generated"
+  ],
+  "scripts": {
+    "generate": "prisma generate",
+    "postinstall": "prisma generate",
+    "seed": "tsx seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "prisma": "^5.22.0",
+    "tsx": "^4.20.6"
+  }
+}

@@ -1,0 +1,180 @@
+---
+alwaysApply: true
+---
+
+## NestJS API Rules
+
+### Architecture & Modules
+
+- Use modular architecture; each domain gets its own module.
+- One controller per main route; secondary routes can use additional controllers.
+- Each module must contain: `controller`, `service`, `dtos`, and (if needed) `providers`.
+- Extract cross-cutting concerns to a `core` module (filters, guards, interceptors, pipes, middlewares).
+- Extract reusable logic to a `shared` module (utilities, adapters, common services).
+- Keep services stateless; avoid storing request-specific state in singletons.
+
+### Microservices Architecture
+
+- **Hybrid Application Pattern**: Each service is a hybrid application (HTTP API + Microservice).
+  - HTTP API: For client requests via API Gateway (Nginx).
+  - Microservice: For inter-service communication via transport layer.
+  - Use `app.connectMicroservice()` in `main.ts` to enable microservice listeners.
+- **Transport Layer Options**:
+  - TCP: Fast, low latency, good for internal services.
+  - Redis: Simple, pub/sub support, good for caching and message queues.
+  - RabbitMQ: Advanced messaging, queues, routing, durable messages.
+  - Kafka: Event streaming, high throughput, distributed messaging.
+  - NATS: Lightweight, fast, cloud-native messaging.
+- **Service Discovery**: Use transport layer native discovery (Redis, RabbitMQ) or static configuration via env vars.
+- **Message Serialization**: Use JSON by default; implement custom serializers if needed.
+- **Independent Deployment**: Each service can be built, containerized, and deployed independently.
+  - Each service has its own `main.ts`, `package.json`, `Dockerfile`.
+  - Services communicate via transport layer, not direct HTTP calls.
+  - Each service can scale, rollback, and version independently.
+
+### Controllers
+
+- Keep controllers thin: validation, transformation, and delegating to services.
+- Use DTOs for all inputs; never accept raw objects.
+- Return typed outputs (classes or interfaces) with minimal fields required.
+- Handle versioning with `@Version('1')` or URI prefix per app strategy.
+- Apply guards at controller level for default security; override per-route if needed.
+
+### Services
+
+- Encapsulate business logic; no HTTP concerns in services.
+- Interact with persistence through repositories/Prisma client injected via providers.
+- Use transactions for multi-step writes with `prisma.$transaction`.
+- Avoid long-running operations; offload to queues or schedulers when needed.
+- **Message Handlers**: Use `@MessagePattern()` for request-response and `@EventPattern()` for event-driven patterns.
+- **Client Proxies**: Use `ClientProxy` to call other services via transport layer.
+  - Inject ClientProxy via providers for inter-service communication.
+  - Use typed interfaces for message payloads and responses.
+
+### DTOs & Validation
+
+- Define DTO classes with `class-validator` decorators for all inputs.
+- Use `class-transformer` (e.g., `@Type`) where necessary for nested objects and dates.
+- Use whitelisting and forbidding non-whitelisted properties globally.
+- Sanitize inputs where applicable (e.g., trimming strings).
+
+### Pipes, Guards, Interceptors, Filters
+
+- Pipes: ValidationPipe globally with `{ whitelist: true, forbidNonWhitelisted: true, transform: true }`.
+- Guards: JWT auth and RBAC (`RolesGuard`) applied at route/controller level as required.
+- Interceptors: Logging, timeout, response mapping, and class-serializer where suitable.
+- Filters: Global exception filter to standardize error responses without leaking internals.
+
+### Configuration & Environment
+
+- Use `@nestjs/config` with schema validation (e.g., Joi) for env vars.
+- Never access `process.env` directly in business logic; inject ConfigService.
+- Separate configs per environment; default secure values in production.
+
+### Logging & Monitoring
+
+- Use NestJS Logger or a structured logger (e.g., pino) via an injected provider.
+- Log request start/end, errors, and important business events without sensitive data.
+- Correlate logs with request identifiers when available.
+
+### Error Handling
+
+- Throw HTTP exceptions with precise status codes; avoid generic 500s unless unexpected.
+- Add context when rethrowing errors; do not expose stack traces to clients.
+- Map domain errors to HTTP errors in controllers or exception filters.
+
+### API Docs (Swagger)
+
+- Use `@nestjs/swagger` for OpenAPI documentation.
+- Document DTOs, responses, and error models.
+- Hide sensitive/internal endpoints; secure Swagger in non-local environments.
+
+### Versioning & Deprecation
+
+- Enable API versioning (URI or header-based) and document per-route versions.
+- Deprecate old versions with clear timelines and behavior; add warnings headers.
+
+### Caching & Rate Limiting
+
+- Use Nest cache module or external cache (Redis) for heavy read paths.
+- Apply route-level caching where safe; avoid caching personalized data unless keyed.
+- Apply rate limiting per IP/user; stricter for auth-sensitive routes.
+
+### Prisma Integration
+
+- **Single Database Strategy**: All services share the same database schema.
+  - Shared Prisma schema at root level (`shared/database/prisma/schema.prisma`).
+  - Each service generates its own Prisma Client from shared schema.
+  - Connection pooling per service; configure pool size per environment.
+  - Transaction boundaries: Be careful with distributed transactions across services.
+- Use PrismaClient as a singleton provider; avoid creating clients per request.
+- Scope queries via select/include to fetch only needed fields.
+- Implement repositories or service-level methods; avoid Prisma calls in controllers.
+- Handle unique constraint errors and map to 409 Conflict where applicable.
+- **Database Migrations**: Run migrations centrally or per service with coordination.
+
+### Security (Backend-specific)
+
+- **API Gateway Integration**: Nginx validates JWT tokens and extracts claims into headers.
+  - Option A (Nginx Plus): Use `ngx_http_auth_jwt_module` to validate and extract claims.
+  - Option B (Nginx Open Source): Use Lua script with `lua-resty-jwt` to validate and extract claims.
+  - Headers injected: `X-User-Id`, `X-User-Email`, `X-User-Roles`, `X-User-Scopes`, etc.
+- **Service-Level Guards**: 
+  - HTTP endpoints: Use guards to read user info from Nginx-injected headers (no JWT validation needed).
+  - Microservice handlers: Read user context from message payload (forward user context in messages).
+  - RBAC guards based on roles from headers or message payload.
+- **Custom Decorators**: Use `@GatewayUser()`, `@CurrentUser()`, `@Roles()` to extract user context.
+- Apply `JwtAuthGuard` and `RolesGuard` consistently on protected routes.
+- Validate and sanitize all inputs before persistence.
+- Enforce CORS, HTTPS, security headers; avoid wildcard origins in production.
+- **Service-to-Service Authentication**: Forward user context in message payloads or use service tokens.
+
+### Scheduling & Queues
+
+- Use `@nestjs/schedule` for cron-like tasks; keep jobs idempotent and short.
+- Use a queue (e.g., Bull) for long-running/background tasks; retry with backoff.
+
+### Testing
+
+- Unit test all services and controllers (happy-path and edge cases).
+- Use testing module with mocked providers and Prisma test client.
+- Write E2E tests per API module; seed deterministic test data.
+
+### Auth Service (JWT Token Management)
+
+- **JWT Token Management**: Issue, validate, and refresh JWT tokens (not OAuth2).
+  - Endpoints: `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me`.
+  - Token structure: Claims include `userId`, `email`, `roles`, `scopes` (optional), `iat`, `exp`.
+  - Algorithm: HS256 or RS256; manage secret keys securely.
+  - Token expiration: Configure appropriate lifetimes (short access tokens, longer refresh tokens).
+- **User Management**: User CRUD, authentication, roles, and permissions.
+- **Microservice Handlers**: Expose message handlers for inter-service auth (e.g., validate token, get user info).
+- **Token Validation**: Services don't validate tokens; Nginx validates and extracts claims.
+
+### Inter-Service Communication
+
+- **Transport Layer**: Use transport layer (TCP, Redis, RabbitMQ, etc.) for inter-service communication.
+  - Avoid direct HTTP calls between services.
+  - Use ClientProxy to call other services via transport layer.
+  - Forward user context in message payloads when needed.
+- **Message Patterns**: 
+  - Request-Response: Use `@MessagePattern()` for synchronous calls.
+  - Event-Driven: Use `@EventPattern()` for asynchronous events.
+- **Message DTOs**: Define typed DTOs for all inter-service message payloads.
+- **Service Discovery**: Use transport layer native discovery or static configuration.
+
+### Health Checks & Monitoring
+
+- **Health Check Endpoints**: Implement `GET /health` for HTTP endpoints.
+  - Include readiness and liveness probes.
+  - Check database connectivity, external dependencies.
+- **Microservice Health Checks**: Optional health check handlers for transport layer.
+- **Standardized Format**: Use consistent health check response format across services.
+
+### Project Conventions
+
+- Use English for code and documentation.
+- Use PascalCase for classes; camelCase for variables/functions; kebab-case for files.
+- Export only one symbol per file.
+- Keep functions short (< 20 instructions) and focused on a single responsibility.
+- **Independent Deployment**: Each service has its own build, test, and deployment pipeline.

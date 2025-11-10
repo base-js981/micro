@@ -1,0 +1,176 @@
+---
+alwaysApply: true
+---
+
+## Project Structure Rules
+
+### Overview
+
+- Microservices monorepo with independent deployment for each service.
+- Each service is a hybrid NestJS application (HTTP API + Microservice).
+- Shared database schema and common libraries across services.
+- Nginx as API Gateway (JWT validation and claims extraction).
+
+### Microservices Monorepo Structure
+
+- `services/` - All microservices (independent deployment)
+  - `auth-service/` - JWT token management service
+    - `src/`
+      - `main.ts` - Bootstrap HTTP API + Microservice
+      - `app.module.ts` - Root module
+      - `auth/` - Authentication module
+        - `auth.module.ts`, `auth.controller.ts` (HTTP), `auth.service.ts`
+        - `handlers/` - Message handlers (`@MessagePattern`, `@EventPattern`)
+        - `dtos/` - DTOs for HTTP and microservice
+      - `users/` - User management module
+        - `users.module.ts`, `users.controller.ts` (HTTP), `users.service.ts`
+        - `handlers/` - Message handlers
+        - `dtos/`
+      - `tokens/` - Token management (JWT issue/validate)
+        - `tokens.module.ts`, `tokens.service.ts`, `jwt.service.ts`
+      - `health/` - Health check module
+        - `health.module.ts`, `health.controller.ts`, `health.service.ts`
+    - `Dockerfile` - Service-specific Dockerfile
+    - `docker-compose.yml` - Local development (optional)
+    - `package.json` - Service-specific dependencies
+    - `.env.example` - Service-specific environment variables
+    - `tsconfig.json` - Service-specific TypeScript config
+    - `.github/workflows/` - Service-specific CI/CD pipeline (optional)
+  - `user-service/` - User domain service
+    - `src/`
+      - `main.ts` - Bootstrap HTTP API + Microservice
+      - `app.module.ts`
+      - `users/` - User domain module
+        - `users.module.ts`, `users.controller.ts` (HTTP), `users.service.ts`
+        - `handlers/` - Message handlers
+        - `clients/` - ClientProxy for calling other services
+        - `dtos/`
+      - `health/` - Health check module
+    - `Dockerfile`, `package.json`, `.env.example`, etc.
+  - `<other-service>/` - Additional business services
+- `shared/` - Shared resources across services
+  - `database/prisma/` - Shared Prisma schema
+    - `schema.prisma` - Single database schema for all services
+    - `migrations/` - Database migrations
+  - `common/` - Shared libraries (can be separate packages)
+    - `guards/` - Common guards
+      - `gateway-user.guard.ts` - Read user from Nginx headers (HTTP)
+      - `message-user.guard.ts` - Read user from message payload (Microservice)
+      - `roles.guard.ts` - RBAC guard
+    - `decorators/` - Common decorators
+      - `gateway-user.decorator.ts` - `@GatewayUser()`
+      - `current-user.decorator.ts` - `@CurrentUser()`
+      - `roles.decorator.ts` - `@Roles()`
+    - `clients/` - ClientProxy factories
+      - `auth-service.client.ts` - Auth service client
+      - `<service>-client.ts` - Other service clients
+    - `messages/` - Message DTOs for inter-service communication
+      - `auth-messages.dto.ts`
+      - `<domain>-messages.dto.ts`
+    - `types/` - Common types and interfaces
+      - `gateway-headers.interface.ts` - Nginx headers types
+      - `jwt-claims.interface.ts` - JWT claims types
+      - `user-context.interface.ts` - User context type
+      - `message-context.interface.ts` - Message context type
+    - `utils/` - Common utilities
+      - `jwt.util.ts` - JWT utilities (for Auth Service)
+- `nginx/` - Nginx configuration (optional - if stored in repo)
+  - `nginx.conf` - Main Nginx config
+  - `jwt-auth.conf` - JWT authentication config
+  - `upstreams.conf` - Upstream service definitions
+  - `lua/` - Lua scripts (if using Nginx Open Source with Lua)
+- `docker-compose.yml` - Local development (orchestrate all services)
+- `.github/workflows/` - Shared CI/CD workflows (optional)
+
+### Service Structure (Hybrid Application)
+
+- Each service is a hybrid NestJS application:
+  - **HTTP API**: Controllers handle requests from clients via Nginx.
+  - **Microservice**: Message handlers handle requests from other services via transport layer.
+  - **Business Logic**: Services contain shared business logic used by both HTTP and microservice.
+- **Main Bootstrap**: `main.ts` in each service:
+  - Bootstrap HTTP API server.
+  - Connect microservice listeners via `app.connectMicroservice()`.
+  - Configure transport layer (TCP, Redis, RabbitMQ, etc.).
+- **Module Structure**:
+  - `controllers/` - HTTP controllers (optional, can be in module root).
+  - `handlers/` - Message handlers (`@MessagePattern`, `@EventPattern`).
+  - `services/` - Business logic (shared between HTTP and microservice).
+  - `clients/` - ClientProxy for calling other services (optional).
+  - `dtos/` - DTOs for HTTP endpoints and microservice messages.
+- **Health Checks**: Each service implements `GET /health` endpoint.
+
+### Independent Deployment
+
+- **Each Service is Independent**:
+  - Own `package.json` with service-specific dependencies.
+  - Own `Dockerfile` for containerization.
+  - Own `.env.example` for environment configuration.
+  - Own CI/CD pipeline (can be shared workflows with service-specific configs).
+  - Own versioning (semantic versioning per service).
+- **Containerization**:
+  - Multi-stage Dockerfiles for optimized image size.
+  - Health checks in Dockerfile.
+  - Non-root user in containers.
+- **Configuration**:
+  - Environment-specific configs per service (dev, staging, prod).
+  - Transport layer configuration via env vars.
+  - Service discovery configuration via env vars.
+- **Database Migrations**:
+  - Option 1: Centralized migration service.
+  - Option 2: Each service runs migrations on startup (with coordination).
+  - Option 3: Migration service manages all migrations.
+
+### Naming & Boundaries
+
+- PascalCase for classes; camelCase for variables/functions; kebab-case for files/dirs.
+- Do not import between services directly; share via `shared/` or message communication.
+- Each service has clear domain boundaries.
+- Inter-service communication via transport layer, not direct imports.
+
+### Env & Configuration
+
+- **Per Service Configuration**: Each service has its own `.env.example` and `.env` files.
+  - Service-specific environment variables.
+  - Transport layer configuration (Redis host, RabbitMQ URL, TCP ports, etc.).
+  - Database connection string (shared database).
+  - JWT secret keys (for Auth Service).
+  - Nginx header names (for Gateway User Guard).
+- **Shared Configuration**: Use `@nestjs/config` with schema validation (e.g., Joi).
+- **Environment-Specific**: Separate configs per environment (dev, staging, prod).
+- Do not access `process.env` directly in business logic; inject ConfigService.
+- **Transport Layer Config**: Configure service addresses via env vars (Redis, RabbitMQ, TCP, etc.).
+
+### Scripts & CI
+
+- **Per Service Scripts**: Each service has its own scripts in `package.json`:
+  - `build` - Build service.
+  - `start` - Start service (dev/prod).
+  - `start:dev` - Start in development mode.
+  - `start:prod` - Start in production mode.
+  - `test` - Run unit tests.
+  - `test:e2e` - Run E2E tests.
+  - `lint` - Lint code.
+  - `format` - Format code.
+  - `prisma:generate` - Generate Prisma Client from shared schema.
+  - `prisma:migrate` - Run migrations (if service manages migrations).
+- **Shared Scripts**: Root-level scripts for common tasks (if using workspace).
+- **CI/CD**: 
+  - Each service can have its own CI/CD pipeline.
+  - Or use shared workflows with service-specific configurations.
+  - Build, test, containerize, and deploy independently.
+- **Pre-commit Hooks**: Enforce lint and format across all services.
+- **Coverage**: Store coverage outputs per service; cache dependencies in CI.
+
+### Path Aliases
+
+- **Per Service Aliases**: Each service can define its own path aliases in `tsconfig.json`.
+- **Shared Aliases**: Use `tsconfig.base.json` to declare shared aliases:
+  - `@shared/*` - Shared libraries (`shared/common/*`).
+  - `@shared/database/*` - Shared Prisma schema.
+- **Service-Specific Aliases**: Each service can define aliases for its own modules.
+- **Tooling Alignment**: 
+  - ESLint: `settings.import/resolver` to read TS paths.
+  - Jest: map `moduleNameMapper` accordingly.
+- Keep folder names in sync with aliases to avoid drift.
+
