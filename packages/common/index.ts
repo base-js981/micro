@@ -12,4 +12,5 @@ export * from './types/jwt-claims.interface';
 export * from './messages/auth-messages.dto';
 export * from './clients/auth-service.client';
 export * from './utils/jwt.util';
+export * from './utils/proto.util';
 

@@ -4,8 +4,10 @@ import {
   ExecutionContext,
   CallHandler,
 } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { Observable } from 'rxjs';
-import { PrismaService } from '../prisma/prisma.service';
+import { UserAttribute } from '@micro/database';
 import { UserContext } from '@micro/common';
 
 /**
@@ -14,7 +16,10 @@ import { UserContext } from '@micro/common';
  */
 @Injectable()
 export class AbacInterceptor implements NestInterceptor {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    @InjectRepository(UserAttribute)
+    private readonly userAttributeRepository: Repository<UserAttribute>,
+  ) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
     const request = context.switchToHttp().getRequest();
@@ -22,7 +27,7 @@ export class AbacInterceptor implements NestInterceptor {
 
     if (user && user.userId) {
       // Load user attributes from database
-      const userAttributes = await this.prisma.userAttribute.findMany({
+      const userAttributes = await this.userAttributeRepository.find({
         where: { userId: user.userId },
       });
 

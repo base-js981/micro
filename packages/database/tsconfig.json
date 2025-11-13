@@ -9,12 +9,17 @@
     "sourceMap": true,
     "module": "commonjs",
     "target": "ES2021",
-    "types": ["node"]
+    "types": ["node"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "strictPropertyInitialization": false
   },
   "include": [
     "index.ts",
+    "data-source.ts",
     "seed.ts",
-    "generated/**/*"
+    "entities/**/*",
+    "migrations/**/*"
   ],
   "exclude": [
     "dist",

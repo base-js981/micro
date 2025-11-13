@@ -3,39 +3,43 @@ import {
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, In } from 'typeorm';
+import { v4 as uuidv4 } from 'uuid';
+import { Permission, Role, UserRole, RolePermission } from '@micro/database';
 import { CreatePermissionDto } from './dtos/create-permission.dto';
 import { UpdatePermissionDto } from './dtos/update-permission.dto';
 import { PermissionResponseDto } from './dtos/permission-response.dto';
 
 @Injectable()
 export class PermissionsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    @InjectRepository(Permission)
+    private readonly permissionRepository: Repository<Permission>,
+    @InjectRepository(Role)
+    private readonly roleRepository: Repository<Role>,
+    @InjectRepository(UserRole)
+    private readonly userRoleRepository: Repository<UserRole>,
+    @InjectRepository(RolePermission)
+    private readonly rolePermissionRepository: Repository<RolePermission>,
+  ) {}
 
   async getPermissionsByRoles(roleNames: string[]): Promise<string[]> {
     if (!roleNames || roleNames.length === 0) {
       return [];
     }
 
-    const roles = await this.prisma.role.findMany({
+    const roles = await this.roleRepository.find({
       where: {
-        name: {
-          in: roleNames,
-        },
+        name: In(roleNames),
       },
-      include: {
-        permissions: {
-          include: {
-            permission: true,
-          },
-        },
-      },
+      relations: ['permissions', 'permissions.permission'],
     });
 
     // Flatten and get unique permissions
     const permissionsSet = new Set<string>();
-    roles.forEach((role: any) => {
-      role.permissions.forEach((rp: any) => {
+    roles.forEach((role) => {
+      role.permissions.forEach((rp) => {
         permissionsSet.add(rp.permission.name);
       });
     });
@@ -44,33 +48,19 @@ export class PermissionsService {
   }
 
   async getUserPermissions(userId: string): Promise<string[]> {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        roles: {
-          include: {
-            role: {
-              include: {
-                permissions: {
-                  include: {
-                    permission: true,
-                  },
-                },
-              },
-            },
-          },
-        },
-      },
+    const userRoles = await this.userRoleRepository.find({
+      where: { userId },
+      relations: ['role', 'role.permissions', 'role.permissions.permission'],
     });
 
-    if (!user) {
+    if (!userRoles || userRoles.length === 0) {
       return [];
     }
 
     // Flatten and get unique permissions
     const permissionsSet = new Set<string>();
-    user.roles.forEach((userRole: any) => {
-      userRole.role.permissions.forEach((rp: any) => {
+    userRoles.forEach((userRole) => {
+      userRole.role.permissions.forEach((rp) => {
         permissionsSet.add(rp.permission.name);
       });
     });
@@ -79,17 +69,17 @@ export class PermissionsService {
   }
 
   async findAll(): Promise<PermissionResponseDto[]> {
-    const permissions = await this.prisma.permission.findMany({
-      orderBy: {
-        createdAt: 'desc',
+    const permissions = await this.permissionRepository.find({
+      order: {
+        createdAt: 'DESC',
       },
     });
 
-    return permissions.map((p: any) => this.mapToResponseDto(p));
+    return permissions.map((p) => this.mapToResponseDto(p));
   }
 
   async findOne(id: string): Promise<PermissionResponseDto> {
-    const permission = await this.prisma.permission.findUnique({
+    const permission = await this.permissionRepository.findOne({
       where: { id },
     });
 
@@ -102,7 +92,7 @@ export class PermissionsService {
 
   async create(createPermissionDto: CreatePermissionDto): Promise<PermissionResponseDto> {
     // Check if permission already exists
-    const existing = await this.prisma.permission.findUnique({
+    const existing = await this.permissionRepository.findOne({
       where: { name: createPermissionDto.name },
     });
 
@@ -111,7 +101,7 @@ export class PermissionsService {
     }
 
     // Check if resource+action combination already exists
-    const existingResourceAction = await this.prisma.permission.findFirst({
+    const existingResourceAction = await this.permissionRepository.findOne({
       where: {
         resource: createPermissionDto.resource,
         action: createPermissionDto.action,
@@ -124,20 +114,20 @@ export class PermissionsService {
       );
     }
 
-    const permission = await this.prisma.permission.create({
-      data: {
-        name: createPermissionDto.name,
-        resource: createPermissionDto.resource,
-        action: createPermissionDto.action,
-        description: createPermissionDto.description,
-      },
+    const permission = this.permissionRepository.create({
+      id: uuidv4(),
+      name: createPermissionDto.name,
+      resource: createPermissionDto.resource,
+      action: createPermissionDto.action,
+      description: createPermissionDto.description,
     });
+    const savedPermission = await this.permissionRepository.save(permission);
 
-    return this.mapToResponseDto(permission);
+    return this.mapToResponseDto(savedPermission);
   }
 
   async update(id: string, updatePermissionDto: UpdatePermissionDto): Promise<PermissionResponseDto> {
-    const existing = await this.prisma.permission.findUnique({
+    const existing = await this.permissionRepository.findOne({
       where: { id },
     });
 
@@ -147,7 +137,7 @@ export class PermissionsService {
 
     // Check if new name conflicts
     if (updatePermissionDto.name && updatePermissionDto.name !== existing.name) {
-      const nameExists = await this.prisma.permission.findUnique({
+      const nameExists = await this.permissionRepository.findOne({
         where: { name: updatePermissionDto.name },
       });
 
@@ -165,36 +155,39 @@ export class PermissionsService {
       const resource = updatePermissionDto.resource || existing.resource;
       const action = updatePermissionDto.action || existing.action;
 
-      const resourceActionExists = await this.prisma.permission.findFirst({
+      const resourceActionExists = await this.permissionRepository.findOne({
         where: {
           resource,
           action,
-          NOT: { id },
         },
       });
 
-      if (resourceActionExists) {
+      if (resourceActionExists && resourceActionExists.id !== id) {
         throw new ConflictException(
           `Permission with resource "${resource}" and action "${action}" already exists`,
         );
       }
     }
 
-    const permission = await this.prisma.permission.update({
-      where: { id },
-      data: {
+    await this.permissionRepository.update(
+      { id },
+      {
         name: updatePermissionDto.name,
         resource: updatePermissionDto.resource,
         action: updatePermissionDto.action,
         description: updatePermissionDto.description,
       },
+    );
+
+    const updatedPermission = await this.permissionRepository.findOne({
+      where: { id },
     });
 
-    return this.mapToResponseDto(permission);
+    return this.mapToResponseDto(updatedPermission!);
   }
 
   async remove(id: string): Promise<void> {
-    const permission = await this.prisma.permission.findUnique({
+    const permission = await this.permissionRepository.findOne({
       where: { id },
     });
 
@@ -202,12 +195,10 @@ export class PermissionsService {
       throw new NotFoundException(`Permission with ID ${id} not found`);
     }
 
-    await this.prisma.permission.delete({
-      where: { id },
-    });
+    await this.permissionRepository.delete({ id });
   }
 
-  private mapToResponseDto(permission: any): PermissionResponseDto {
+  private mapToResponseDto(permission: Permission): PermissionResponseDto {
     return {
       id: permission.id,
       name: permission.name,
@@ -219,4 +210,3 @@ export class PermissionsService {
     };
   }
 }
-

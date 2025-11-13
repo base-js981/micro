@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, In } from 'typeorm';
+import { Policy, PolicyRule, PolicyAssignment, User, UserRole } from '@micro/database';
 import { IAbacService } from '@micro/common';
 
 export interface PolicyEvaluationContext {
@@ -20,7 +22,14 @@ export interface PolicyEvaluationContext {
 
 @Injectable()
 export class AbacService implements IAbacService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    @InjectRepository(Policy)
+    private readonly policyRepository: Repository<Policy>,
+    @InjectRepository(PolicyAssignment)
+    private readonly policyAssignmentRepository: Repository<PolicyAssignment>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+  ) {}
 
   /**
    * Evaluate a single policy rule
@@ -95,9 +104,9 @@ export class AbacService implements IAbacService {
     policyId: string,
     context: PolicyEvaluationContext,
   ): Promise<boolean> {
-    const policy = await this.prisma.policy.findUnique({
+    const policy = await this.policyRepository.findOne({
       where: { id: policyId },
-      include: { rules: true },
+      relations: ['rules'],
     });
 
     if (!policy) {
@@ -123,16 +132,9 @@ export class AbacService implements IAbacService {
    */
   async checkAccess(context: PolicyEvaluationContext): Promise<boolean> {
     // Get all policies assigned to user's roles or directly to user
-    const user = await this.prisma.user.findUnique({
+    const user = await this.userRepository.findOne({
       where: { id: context.user.id },
-      include: {
-        roles: {
-          include: { role: true },
-        },
-        policyAssignments: {
-          include: { policy: { include: { rules: true } } },
-        },
-      },
+      relations: ['roles', 'roles.role', 'policyAssignments', 'policyAssignments.policy', 'policyAssignments.policy.rules'],
     });
 
     if (!user) {
@@ -143,18 +145,16 @@ export class AbacService implements IAbacService {
     const roleIds = user.roles.map((ur) => ur.roleId);
 
     // Get policies assigned to roles
-    const rolePolicyAssignments = await this.prisma.policyAssignment.findMany({
+    const rolePolicyAssignments = await this.policyAssignmentRepository.find({
       where: {
-        roleId: { in: roleIds },
+        roleId: In(roleIds),
       },
-      include: {
-        policy: { include: { rules: true } },
-      },
+      relations: ['policy', 'policy.rules'],
     });
 
     // Combine user-assigned and role-assigned policies
     const allPolicies = [
-      ...user.policyAssignments.map((pa) => pa.policy),
+      ...(user.policyAssignments?.map((pa) => pa.policy) || []),
       ...rolePolicyAssignments.map((pa) => pa.policy),
     ];
 

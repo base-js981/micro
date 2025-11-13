@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package licensing.service;
+
+// Licensing service for synchronous RPC calls
+service LicensingService {
+  // Validate license
+  rpc ValidateLicense(ValidateLicenseRequest) returns (ValidateLicenseResponse);
+  
+  // Get license information
+  rpc GetLicenseInfo(GetLicenseInfoRequest) returns (GetLicenseInfoResponse);
+  
+  // Activate license
+  rpc ActivateLicense(ActivateLicenseRequest) returns (ActivateLicenseResponse);
+  
+  // Deactivate license
+  rpc DeactivateLicense(DeactivateLicenseRequest) returns (DeactivateLicenseResponse);
+}
+
+message ValidateLicenseRequest {
+  string license_key = 1;
+}
+
+message ValidateLicenseResponse {
+  bool valid = 1;
+  string license_id = 2;
+  string status = 3;
+  int64 expires_at = 4; // Unix timestamp
+  string error = 5; // Optional error message
+}
+
+message GetLicenseInfoRequest {
+  string license_id = 1;
+}
+
+message GetLicenseInfoResponse {
+  bool success = 1;
+  string license_id = 2;
+  string license_key = 3;
+  string status = 4;
+  int64 created_at = 5; // Unix timestamp
+  int64 expires_at = 6; // Unix timestamp
+  string error = 7; // Optional error message
+}
+
+message ActivateLicenseRequest {
+  string license_key = 1;
+  string user_id = 2;
+}
+
+message ActivateLicenseResponse {
+  bool success = 1;
+  string license_id = 2;
+  string status = 3;
+  string error = 4; // Optional error message
+}
+
+message DeactivateLicenseRequest {
+  string license_id = 1;
+}
+
+message DeactivateLicenseResponse {
+  bool success = 1;
+  string error = 2; // Optional error message
+}
+

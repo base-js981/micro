@@ -4,7 +4,10 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
-import { PrismaService } from '../prisma/prisma.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, DataSource, In } from 'typeorm';
+import { v4 as uuidv4 } from 'uuid';
+import { Policy, PolicyRule, PolicyAssignment, Role, User } from '@micro/database';
 import { CreatePolicyDto } from './dtos/create-policy.dto';
 import { UpdatePolicyDto } from './dtos/update-policy.dto';
 import { PolicyResponseDto } from './dtos/policy-response.dto';
@@ -14,21 +17,25 @@ import { PolicyAssignmentResponseDto } from './dtos/policy-assignment-response.d
 
 @Injectable()
 export class PoliciesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    @InjectRepository(Policy)
+    private readonly policyRepository: Repository<Policy>,
+    @InjectRepository(PolicyRule)
+    private readonly policyRuleRepository: Repository<PolicyRule>,
+    @InjectRepository(PolicyAssignment)
+    private readonly policyAssignmentRepository: Repository<PolicyAssignment>,
+    @InjectRepository(Role)
+    private readonly roleRepository: Repository<Role>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
+    private readonly dataSource: DataSource,
+  ) {}
 
   async findAll(): Promise<PolicyResponseDto[]> {
-    const policies = await this.prisma.policy.findMany({
-      include: {
-        rules: true,
-        assignments: {
-          include: {
-            role: true,
-            user: true,
-          },
-        },
-      },
-      orderBy: {
-        createdAt: 'desc',
+    const policies = await this.policyRepository.find({
+      relations: ['rules', 'assignments', 'assignments.role', 'assignments.user'],
+      order: {
+        createdAt: 'DESC',
       },
     });
 
@@ -36,17 +43,9 @@ export class PoliciesService {
   }
 
   async findOne(id: string): Promise<PolicyResponseDto> {
-    const policy = await this.prisma.policy.findUnique({
+    const policy = await this.policyRepository.findOne({
       where: { id },
-      include: {
-        rules: true,
-        assignments: {
-          include: {
-            role: true,
-            user: true,
-          },
-        },
-      },
+      relations: ['rules', 'assignments', 'assignments.role', 'assignments.user'],
     });
 
     if (!policy) {
@@ -57,17 +56,9 @@ export class PoliciesService {
   }
 
   async findByName(name: string): Promise<PolicyResponseDto | null> {
-    const policy = await this.prisma.policy.findUnique({
+    const policy = await this.policyRepository.findOne({
       where: { name },
-      include: {
-        rules: true,
-        assignments: {
-          include: {
-            role: true,
-            user: true,
-          },
-        },
-      },
+      relations: ['rules', 'assignments', 'assignments.role', 'assignments.user'],
     });
 
     if (!policy) {
@@ -79,7 +70,7 @@ export class PoliciesService {
 
   async create(createPolicyDto: CreatePolicyDto): Promise<PolicyResponseDto> {
     // Check if policy already exists
-    const existing = await this.prisma.policy.findUnique({
+    const existing = await this.policyRepository.findOne({
       where: { name: createPolicyDto.name },
     });
 
@@ -87,40 +78,45 @@ export class PoliciesService {
       throw new ConflictException('Policy with this name already exists');
     }
 
-    // Create policy with rules
-    const policy = await this.prisma.policy.create({
-      data: {
+    // Create policy with rules using transaction
+    return await this.dataSource.transaction(async (manager) => {
+      const policy = manager.create(Policy, {
+        id: uuidv4(),
         name: createPolicyDto.name,
         description: createPolicyDto.description,
         resource: createPolicyDto.resource,
         action: createPolicyDto.action,
         effect: createPolicyDto.effect || 'allow',
-        rules: createPolicyDto.rules
-          ? {
-              create: createPolicyDto.rules.map((rule) => ({
-                attribute: rule.attribute,
-                operator: rule.operator,
-                value: rule.value,
-              })),
-            }
-          : undefined,
-      },
-      include: {
-        rules: true,
-        assignments: {
-          include: {
-            role: true,
-            user: true,
-          },
-        },
-      },
-    });
+      });
 
-    return this.mapToResponseDto(policy);
+      const savedPolicy = await manager.save(Policy, policy);
+
+      // Create rules if provided
+      if (createPolicyDto.rules && createPolicyDto.rules.length > 0) {
+        const rules = createPolicyDto.rules.map((rule) =>
+          manager.create(PolicyRule, {
+            id: uuidv4(),
+            policyId: savedPolicy.id,
+            attribute: rule.attribute,
+            operator: rule.operator,
+            value: rule.value,
+          }),
+        );
+        await manager.save(PolicyRule, rules);
+      }
+
+      // Reload with relations
+      const policyWithRelations = await manager.findOne(Policy, {
+        where: { id: savedPolicy.id },
+        relations: ['rules', 'assignments', 'assignments.role', 'assignments.user'],
+      });
+
+      return this.mapToResponseDto(policyWithRelations!);
+    });
   }
 
   async update(id: string, updatePolicyDto: UpdatePolicyDto): Promise<PolicyResponseDto> {
-    const existing = await this.prisma.policy.findUnique({
+    const existing = await this.policyRepository.findOne({
       where: { id },
     });
 
@@ -130,7 +126,7 @@ export class PoliciesService {
 
     // Check if new name conflicts
     if (updatePolicyDto.name && updatePolicyDto.name !== existing.name) {
-      const nameExists = await this.prisma.policy.findUnique({
+      const nameExists = await this.policyRepository.findOne({
         where: { name: updatePolicyDto.name },
       });
 
@@ -139,52 +135,49 @@ export class PoliciesService {
       }
     }
 
-    // Update policy
-    const updateData: any = {};
-    if (updatePolicyDto.name !== undefined) updateData.name = updatePolicyDto.name;
-    if (updatePolicyDto.description !== undefined) updateData.description = updatePolicyDto.description;
-    if (updatePolicyDto.resource !== undefined) updateData.resource = updatePolicyDto.resource;
-    if (updatePolicyDto.action !== undefined) updateData.action = updatePolicyDto.action;
-    if (updatePolicyDto.effect !== undefined) updateData.effect = updatePolicyDto.effect;
+    // Update policy with rules using transaction
+    return await this.dataSource.transaction(async (manager) => {
+      // Update policy fields
+      if (updatePolicyDto.name !== undefined) existing.name = updatePolicyDto.name;
+      if (updatePolicyDto.description !== undefined) existing.description = updatePolicyDto.description;
+      if (updatePolicyDto.resource !== undefined) existing.resource = updatePolicyDto.resource;
+      if (updatePolicyDto.action !== undefined) existing.action = updatePolicyDto.action;
+      if (updatePolicyDto.effect !== undefined) existing.effect = updatePolicyDto.effect;
 
-    // Update rules if provided
-    if (updatePolicyDto.rules !== undefined) {
-      // Delete all existing rules
-      await this.prisma.policyRule.deleteMany({
-        where: { policyId: id },
+      await manager.save(Policy, existing);
+
+      // Update rules if provided
+      if (updatePolicyDto.rules !== undefined) {
+        // Delete all existing rules
+        await manager.delete(PolicyRule, { policyId: id });
+
+        // Create new rules
+        if (updatePolicyDto.rules.length > 0) {
+          const rules = updatePolicyDto.rules.map((rule) =>
+            manager.create(PolicyRule, {
+              id: uuidv4(),
+              policyId: id,
+              attribute: rule.attribute,
+              operator: rule.operator,
+              value: rule.value,
+            }),
+          );
+          await manager.save(PolicyRule, rules);
+        }
+      }
+
+      // Reload with relations
+      const policyWithRelations = await manager.findOne(Policy, {
+        where: { id },
+        relations: ['rules', 'assignments', 'assignments.role', 'assignments.user'],
       });
 
-      // Create new rules
-      if (updatePolicyDto.rules.length > 0) {
-        updateData.rules = {
-          create: updatePolicyDto.rules.map((rule) => ({
-            attribute: rule.attribute,
-            operator: rule.operator,
-            value: rule.value,
-          })),
-        };
-      }
-    }
-
-    const policy = await this.prisma.policy.update({
-      where: { id },
-      data: updateData,
-      include: {
-        rules: true,
-        assignments: {
-          include: {
-            role: true,
-            user: true,
-          },
-        },
-      },
+      return this.mapToResponseDto(policyWithRelations!);
     });
-
-    return this.mapToResponseDto(policy);
   }
 
   async remove(id: string): Promise<void> {
-    const policy = await this.prisma.policy.findUnique({
+    const policy = await this.policyRepository.findOne({
       where: { id },
     });
 
@@ -192,16 +185,14 @@ export class PoliciesService {
       throw new NotFoundException(`Policy with ID ${id} not found`);
     }
 
-    await this.prisma.policy.delete({
-      where: { id },
-    });
+    await this.policyRepository.remove(policy);
   }
 
   // Policy Rules Management
   async getPolicyRules(policyId: string): Promise<PolicyRuleResponseDto[]> {
-    const policy = await this.prisma.policy.findUnique({
+    const policy = await this.policyRepository.findOne({
       where: { id: policyId },
-      include: { rules: true },
+      relations: ['rules'],
     });
 
     if (!policy) {
@@ -222,7 +213,7 @@ export class PoliciesService {
     policyId: string,
     createRuleDto: CreatePolicyRuleDto,
   ): Promise<PolicyRuleResponseDto> {
-    const policy = await this.prisma.policy.findUnique({
+    const policy = await this.policyRepository.findOne({
       where: { id: policyId },
     });
 
@@ -230,27 +221,28 @@ export class PoliciesService {
       throw new NotFoundException(`Policy with ID ${policyId} not found`);
     }
 
-    const rule = await this.prisma.policyRule.create({
-      data: {
-        policyId,
-        attribute: createRuleDto.attribute,
-        operator: createRuleDto.operator,
-        value: createRuleDto.value,
-      },
+    const rule = this.policyRuleRepository.create({
+      id: uuidv4(),
+      policyId,
+      attribute: createRuleDto.attribute,
+      operator: createRuleDto.operator,
+      value: createRuleDto.value,
     });
 
+    const savedRule = await this.policyRuleRepository.save(rule);
+
     return {
-      id: rule.id,
-      attribute: rule.attribute,
-      operator: rule.operator,
-      value: rule.value,
-      createdAt: rule.createdAt,
-      updatedAt: rule.updatedAt,
+      id: savedRule.id,
+      attribute: savedRule.attribute,
+      operator: savedRule.operator,
+      value: savedRule.value,
+      createdAt: savedRule.createdAt,
+      updatedAt: savedRule.updatedAt,
     };
   }
 
   async removePolicyRule(policyId: string, ruleId: string): Promise<void> {
-    const rule = await this.prisma.policyRule.findUnique({
+    const rule = await this.policyRuleRepository.findOne({
       where: { id: ruleId },
     });
 
@@ -262,23 +254,14 @@ export class PoliciesService {
       throw new BadRequestException(`Rule ${ruleId} does not belong to policy ${policyId}`);
     }
 
-    await this.prisma.policyRule.delete({
-      where: { id: ruleId },
-    });
+    await this.policyRuleRepository.remove(rule);
   }
 
   // Policy Assignments Management
   async getPolicyAssignments(policyId: string): Promise<PolicyAssignmentResponseDto[]> {
-    const policy = await this.prisma.policy.findUnique({
+    const policy = await this.policyRepository.findOne({
       where: { id: policyId },
-      include: {
-        assignments: {
-          include: {
-            role: true,
-            user: true,
-          },
-        },
-      },
+      relations: ['assignments', 'assignments.role', 'assignments.user'],
     });
 
     if (!policy) {
@@ -301,7 +284,7 @@ export class PoliciesService {
     userId?: string,
   ): Promise<PolicyAssignmentResponseDto> {
     // Validate policy exists
-    const policy = await this.prisma.policy.findUnique({
+    const policy = await this.policyRepository.findOne({
       where: { id: policyId },
     });
 
@@ -320,7 +303,7 @@ export class PoliciesService {
 
     // Validate role exists if provided
     if (roleId) {
-      const role = await this.prisma.role.findUnique({
+      const role = await this.roleRepository.findOne({
         where: { id: roleId },
       });
 
@@ -329,12 +312,10 @@ export class PoliciesService {
       }
 
       // Check if already assigned
-      const existing = await this.prisma.policyAssignment.findUnique({
+      const existing = await this.policyAssignmentRepository.findOne({
         where: {
-          policyId_roleId: {
-            policyId,
-            roleId,
-          },
+          policyId,
+          roleId,
         },
       });
 
@@ -345,7 +326,7 @@ export class PoliciesService {
 
     // Validate user exists if provided
     if (userId) {
-      const user = await this.prisma.user.findUnique({
+      const user = await this.userRepository.findOne({
         where: { id: userId },
       });
 
@@ -354,12 +335,10 @@ export class PoliciesService {
       }
 
       // Check if already assigned
-      const existing = await this.prisma.policyAssignment.findUnique({
+      const existing = await this.policyAssignmentRepository.findOne({
         where: {
-          policyId_userId: {
-            policyId,
-            userId,
-          },
+          policyId,
+          userId,
         },
       });
 
@@ -369,21 +348,22 @@ export class PoliciesService {
     }
 
     // Create assignment
-    const assignment = await this.prisma.policyAssignment.create({
-      data: {
-        policyId,
-        roleId: roleId || undefined,
-        userId: userId || undefined,
-      },
+    const assignment = this.policyAssignmentRepository.create({
+      id: uuidv4(),
+      policyId,
+      roleId: roleId || undefined,
+      userId: userId || undefined,
     });
 
+    const savedAssignment = await this.policyAssignmentRepository.save(assignment);
+
     return {
-      id: assignment.id,
-      policyId: assignment.policyId,
-      roleId: assignment.roleId || undefined,
-      userId: assignment.userId || undefined,
-      createdAt: assignment.createdAt,
-      updatedAt: assignment.updatedAt,
+      id: savedAssignment.id,
+      policyId: savedAssignment.policyId,
+      roleId: savedAssignment.roleId || undefined,
+      userId: savedAssignment.userId || undefined,
+      createdAt: savedAssignment.createdAt,
+      updatedAt: savedAssignment.updatedAt,
     };
   }
 
@@ -398,21 +378,17 @@ export class PoliciesService {
 
     let assignment;
     if (roleId) {
-      assignment = await this.prisma.policyAssignment.findUnique({
+      assignment = await this.policyAssignmentRepository.findOne({
         where: {
-          policyId_roleId: {
-            policyId,
-            roleId,
-          },
+          policyId,
+          roleId,
         },
       });
     } else {
-      assignment = await this.prisma.policyAssignment.findUnique({
+      assignment = await this.policyAssignmentRepository.findOne({
         where: {
-          policyId_userId: {
-            policyId,
-            userId: userId!,
-          },
+          policyId,
+          userId: userId!,
         },
       });
     }
@@ -421,12 +397,10 @@ export class PoliciesService {
       throw new NotFoundException('Policy assignment not found');
     }
 
-    await this.prisma.policyAssignment.delete({
-      where: { id: assignment.id },
-    });
+    await this.policyAssignmentRepository.remove(assignment);
   }
 
-  private mapToResponseDto(policy: any): PolicyResponseDto {
+  private mapToResponseDto(policy: Policy): PolicyResponseDto {
     return {
       id: policy.id,
       name: policy.name,
@@ -434,7 +408,7 @@ export class PoliciesService {
       resource: policy.resource,
       action: policy.action,
       effect: policy.effect,
-      rules: policy.rules?.map((rule: any) => ({
+      rules: policy.rules?.map((rule) => ({
         id: rule.id,
         attribute: rule.attribute,
         operator: rule.operator,
@@ -442,7 +416,7 @@ export class PoliciesService {
         createdAt: rule.createdAt,
         updatedAt: rule.updatedAt,
       })),
-      assignments: policy.assignments?.map((assignment: any) => ({
+      assignments: policy.assignments?.map((assignment) => ({
         id: assignment.id,
         policyId: assignment.policyId,
         roleId: assignment.roleId || undefined,

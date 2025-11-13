@@ -26,8 +26,6 @@ RUN pnpm install --frozen-lockfile
 
 RUN pnpm -F @micro/common run build
 
-RUN pnpm -F @micro/database run generate
-
 # Build the service (replace build:{{SERVICE_NAME}} with your build script)
 RUN pnpm run build:{{SERVICE_NAME}}
 
@@ -41,7 +39,6 @@ COPY --from=builder /app/services/{{SERVICE_NAME}}/dist ./services/{{SERVICE_NAM
 COPY --from=builder /app/services/{{SERVICE_NAME}}/node_modules ./services/{{SERVICE_NAME}}/node_modules
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
-COPY --from=builder /app/packages/database/generated ./packages/database/generated
 
 WORKDIR /app/services/{{SERVICE_NAME}}
 

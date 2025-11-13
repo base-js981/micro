@@ -1,33 +1,66 @@
-version: '3.8'
-
 services:
-  postgres:
-    image: postgres:15-alpine
-    container_name: micro-postgres
+  # Oracle Database (using Oracle XE for development)
+  # Note: For production, use external Oracle database or Oracle Enterprise Edition
+  # IMPORTANT: Oracle Container Registry requires authentication
+  # 1. Register free account at: https://container-registry.oracle.com
+  # 2. Login: docker login container-registry.oracle.com
+  # 3. Then run: docker-compose up
+  oracle:
+    image: container-registry.oracle.com/database/express:21.3.0-xe
+    container_name: micro-oracle
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: micro
+      ORACLE_PWD: password
+      ORACLE_CHARACTERSET: AL32UTF8
     ports:
-      - "5432:5432"
+      - "1521:1521"
+      - "5500:5500" # Oracle Enterprise Manager Express
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - oracle_data:/opt/oracle/oradata
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user"]
+      test: ["CMD-SHELL", "sqlplus -S sys/password@XE as sysdba <<< 'SELECT 1 FROM DUAL;' || exit"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # Zookeeper for Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: micro-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7-alpine
-    container_name: micro-redis
+  # Kafka for async messaging
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: micro-kafka
+    depends_on:
+      - zookeeper
     ports:
-      - "6379:6379"
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://kafka:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT_INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 30s
+      timeout: 10s
       retries: 5
+      start_period: 30s
 
   auth-service:
     build:
@@ -37,18 +70,19 @@ services:
     environment:
       NODE_ENV: development
       PORT: 3001
-      DATABASE_URL: postgresql://user:password@postgres:5432/micro?schema=public
+      DATABASE_URL: oracle://micro_app:password@oracle:1521/XEPDB1
       JWT_SECRET: change-me-in-production
       JWT_EXPIRES_IN: 15m
       JWT_REFRESH_EXPIRES_IN: 7d
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: auth-service
+      GRPC_PORT: 50051
     ports:
       - "3001:3001"
     depends_on:
-      postgres:
+      oracle:
         condition: service_healthy
-      redis:
+      kafka:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
@@ -82,8 +116,9 @@ services:
       # # For AWS S3 (leave S3_ENDPOINT empty)
       # # S3_ENDPOINT:
       # # S3_FORCE_PATH_STYLE: false
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: file-storage-service
+      GRPC_PORT: 50052
       NGINX_USER_ID_HEADER: X-User-Id
       NGINX_USER_EMAIL_HEADER: X-User-Email
       NGINX_USER_ROLES_HEADER: X-User-Roles
@@ -92,10 +127,192 @@ services:
     volumes:
       - file_storage_data:/app/storage
     depends_on:
-      redis:
+      kafka:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  licensing-service:
+    build:
+      context: .
+      dockerfile: services/licensing-service/Dockerfile
+    container_name: micro-licensing-service
+    environment:
+      NODE_ENV: development
+      PORT: 3003
+      DATABASE_URL: oracle://micro_app:password@oracle:1521/XEPDB1
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: licensing-service
+      GRPC_PORT: 50053
+    ports:
+      - "3003:3003"
+    depends_on:
+      oracle:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  user-management-service:
+    build:
+      context: .
+      dockerfile: services/user-management-service/Dockerfile
+    container_name: micro-user-management-service
+    environment:
+      NODE_ENV: development
+      PORT: 3004
+      DATABASE_URL: oracle://micro_app:password@oracle:1521/XEPDB1
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: user-management-service
+      GRPC_PORT: 50054
+    ports:
+      - "3004:3004"
+    depends_on:
+      oracle:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  system-admin-service:
+    build:
+      context: .
+      dockerfile: services/system-admin-service/Dockerfile
+    container_name: micro-system-admin-service
+    environment:
+      NODE_ENV: development
+      PORT: 3005
+      DATABASE_URL: oracle://micro_app:password@oracle:1521/XEPDB1
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: system-admin-service
+      GRPC_PORT: 50055
+    ports:
+      - "3005:3005"
+    depends_on:
+      oracle:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  catalog-service:
+    build:
+      context: .
+      dockerfile: services/catalog-service/Dockerfile
+    container_name: micro-catalog-service
+    environment:
+      NODE_ENV: development
+      PORT: 3006
+      DATABASE_URL: oracle://micro_app:password@oracle:1521/XEPDB1
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: catalog-service
+      GRPC_PORT: 50056
+    ports:
+      - "3006:3006"
+    depends_on:
+      oracle:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  notification-service:
+    build:
+      context: .
+      dockerfile: services/notification-service/Dockerfile
+    container_name: micro-notification-service
+    environment:
+      NODE_ENV: development
+      PORT: 3007
+      DATABASE_URL: oracle://micro_app:password@oracle:1521/XEPDB1
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: notification-service
+      GRPC_PORT: 50057
+    ports:
+      - "3007:3007"
+    depends_on:
+      oracle:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3007/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  integration-service:
+    build:
+      context: .
+      dockerfile: services/integration-service/Dockerfile
+    container_name: micro-integration-service
+    environment:
+      NODE_ENV: development
+      PORT: 3008
+      DATABASE_URL: oracle://micro_app:password@oracle:1521/XEPDB1
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: integration-service
+      GRPC_PORT: 50058
+    ports:
+      - "3008:3008"
+    depends_on:
+      oracle:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3008/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  audit-service:
+    build:
+      context: .
+      dockerfile: services/audit-service/Dockerfile
+    container_name: micro-audit-service
+    environment:
+      NODE_ENV: development
+      PORT: 3009
+      DATABASE_URL: oracle://micro_app:password@oracle:1521/XEPDB1
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_CLIENT_ID: audit-service
+      GRPC_PORT: 50059
+    ports:
+      - "3009:3009"
+    depends_on:
+      oracle:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3009/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -178,7 +395,7 @@ services:
   #     retries: 3
 
 volumes:
-  postgres_data:
+  oracle_data:
   file_storage_data:
   # minio_data:  # Uncomment if using MinIO
 

@@ -20,8 +20,7 @@ RUN corepack enable && corepack prepare pnpm@10.20.0 --activate
 RUN pnpm install --frozen-lockfile
 
 RUN pnpm -F @micro/common run build
-
-RUN pnpm -F @micro/database run generate
+RUN pnpm -F @micro/database run build
 
 RUN pnpm run build:auth
 
@@ -35,7 +34,6 @@ COPY --from=builder /app/services/auth-service/dist ./services/auth-service/dist
 COPY --from=builder /app/services/auth-service/node_modules ./services/auth-service/node_modules
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages ./packages
-COPY --from=builder /app/packages/database/generated ./packages/database/generated
 
 WORKDIR /app/services/auth-service
 

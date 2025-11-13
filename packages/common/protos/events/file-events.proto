@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package file.events;
+
+// File uploaded event
+message FileUploadedEvent {
+  string file_id = 1;
+  string user_id = 2;
+  string key = 3; // S3 key or file path
+  string filename = 4;
+  string content_type = 5;
+  int64 size = 6;
+  int64 uploaded_at = 7; // Unix timestamp
+}
+
+// File deleted event
+message FileDeletedEvent {
+  string file_id = 1;
+  string user_id = 2;
+  string key = 3;
+  int64 deleted_at = 4; // Unix timestamp
+}
+
+// File downloaded event (for audit)
+message FileDownloadedEvent {
+  string file_id = 1;
+  string user_id = 2;
+  string key = 3;
+  int64 downloaded_at = 4; // Unix timestamp
+}
+

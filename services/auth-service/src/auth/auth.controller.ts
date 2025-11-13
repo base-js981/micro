@@ -10,7 +10,6 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dtos/login.dto';
 import { RefreshTokenDto } from './dtos/refresh-token.dto';
 import { LoginResponseDto } from './dtos/login-response.dto';
-import { UserResponseDto } from '../users/dtos/user-response.dto';
 import { GatewayUserGuard, GatewayUser, UserContext } from '@micro/common';
 import { PermissionsResponseDto } from '../permissions/dtos/permissions-response.dto';
 
@@ -56,21 +55,6 @@ export class AuthController {
   async logout(): Promise<{ message: string }> {
     // Implementation for logout (e.g., invalidate refresh token)
     return { message: 'Logged out successfully' };
-  }
-
-  @Get('me')
-  @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ summary: 'Get current authenticated user info' })
-  @ApiResponse({
-    status: 200,
-    description: 'User info retrieved',
-    type: UserResponseDto,
-  })
-  @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @UseGuards(GatewayUserGuard)
-  async getCurrentUser(@GatewayUser() user: UserContext): Promise<UserResponseDto> {
-    // Implementation to get current user from token
-    return { message: 'Get current user' } as any;
   }
 
   @Get('permissions')

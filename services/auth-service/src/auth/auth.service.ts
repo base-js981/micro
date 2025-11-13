@@ -1,5 +1,8 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { UsersService } from '../users/users.service';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository, IsNull } from 'typeorm';
+import { scryptSync, timingSafeEqual } from 'crypto';
+import { User } from '@micro/database';
 import { TokensService } from '../tokens/tokens.service';
 import { PermissionsService } from '../permissions/permissions.service';
 import { LoginDto } from './dtos/login.dto';
@@ -7,13 +10,14 @@ import { LoginDto } from './dtos/login.dto';
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly usersService: UsersService,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private readonly tokensService: TokensService,
     private readonly permissionsService: PermissionsService,
   ) {}
 
   async login(loginDto: LoginDto): Promise<{ accessToken: string; refreshToken?: string }> {
-    const user = await this.usersService.validateUser(loginDto.email, loginDto.password);
+    const user = await this.validateUser(loginDto.email, loginDto.password);
     
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -25,6 +29,32 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
+    };
+  }
+
+  private async validateUser(email: string, password: string): Promise<any> {
+    const user = await this.userRepository.findOne({
+      where: { email, deletedAt: IsNull() },
+      relations: ['roles', 'roles.role'],
+    });
+
+    if (!user) {
+      return null;
+    }
+
+    const [salt, storedHash] = user.password.split(':');
+    const derivedKey = scryptSync(password, salt, 64);
+    const isPasswordValid = timingSafeEqual(Buffer.from(storedHash, 'hex'), derivedKey);
+
+    if (!isPasswordValid) {
+      return null;
+    }
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      roles: user.roles?.map((ur) => ur.role?.name || '') || [],
     };
   }
 

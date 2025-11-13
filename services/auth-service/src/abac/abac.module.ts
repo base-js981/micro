@@ -1,11 +1,14 @@
 import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
 import { AbacService } from './abac.service';
 import { AbacGuard } from './abac.guard';
 import { AbacInterceptor } from './abac.interceptor';
-import { PrismaModule } from '../prisma/prisma.module';
+import { Policy, PolicyAssignment, User, UserAttribute } from '@micro/database';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [
+    TypeOrmModule.forFeature([Policy, PolicyAssignment, User, UserAttribute]),
+  ],
   providers: [AbacService, AbacGuard, AbacInterceptor],
   exports: [AbacService, AbacGuard, AbacInterceptor],
 })

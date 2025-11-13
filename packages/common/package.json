@@ -6,10 +6,12 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
-    "dist"
+    "dist",
+    "protos"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && npm run copy:protos",
+    "copy:protos": "mkdir -p dist/protos && cp -r protos/* dist/protos/",
     "clean": "rimraf dist"
   },
   "dependencies": {
@@ -17,7 +19,11 @@
     "@nestjs/core": "^10.0.0",
     "@nestjs/microservices": "^10.0.0",
     "rxjs": "^7.8.1",
-    "reflect-metadata": "^0.1.13"
+    "reflect-metadata": "^0.1.13",
+    "kafkajs": "^2.2.4",
+    "@grpc/grpc-js": "^1.9.14",
+    "@grpc/proto-loader": "^0.7.10",
+    "protobufjs": "^7.2.5"
   },
   "devDependencies": {
     "@types/node": "^24",

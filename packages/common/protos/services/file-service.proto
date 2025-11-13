@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package file.service;
+
+// File service for synchronous RPC calls
+service FileService {
+  // Check if file exists
+  rpc FileExists(FileExistsRequest) returns (FileExistsResponse);
+  
+  // Get file metadata
+  rpc GetFileMetadata(GetFileMetadataRequest) returns (GetFileMetadataResponse);
+}
+
+message FileExistsRequest {
+  string key = 1;
+}
+
+message FileExistsResponse {
+  bool exists = 1;
+  string error = 2; // Optional error message
+}
+
+message GetFileMetadataRequest {
+  string key = 1;
+}
+
+message GetFileMetadataResponse {
+  bool success = 1;
+  string key = 2;
+  string filename = 3;
+  string content_type = 4;
+  int64 size = 5;
+  int64 created_at = 6; // Unix timestamp
+  string error = 7; // Optional error message
+}
+

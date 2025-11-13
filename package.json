@@ -7,21 +7,52 @@
     "build": "pnpm -r run build",
     "build:auth": "cd services/auth-service && pnpm run build",
     "build:file-storage": "cd services/file-storage-service && pnpm run build",
+    "build:licensing": "cd services/licensing-service && pnpm run build",
+    "build:user-management": "cd services/user-management-service && pnpm run build",
+    "build:system-admin": "cd services/system-admin-service && pnpm run build",
+    "build:catalog": "cd services/catalog-service && pnpm run build",
+    "build:notification": "cd services/notification-service && pnpm run build",
+    "build:integration": "cd services/integration-service && pnpm run build",
+    "build:audit": "cd services/audit-service && pnpm run build",
     "start:dev": "docker-compose up",
     "start:dev:auth": "cd services/auth-service && pnpm run start:dev",
     "start:dev:file-storage": "cd services/file-storage-service && pnpm run start:dev",
+    "start:dev:licensing": "cd services/licensing-service && pnpm run start:dev",
+    "start:dev:user-management": "cd services/user-management-service && pnpm run start:dev",
+    "start:dev:system-admin": "cd services/system-admin-service && pnpm run start:dev",
+    "start:dev:catalog": "cd services/catalog-service && pnpm run start:dev",
+    "start:dev:notification": "cd services/notification-service && pnpm run start:dev",
+    "start:dev:integration": "cd services/integration-service && pnpm run start:dev",
+    "start:dev:audit": "cd services/audit-service && pnpm run start:dev",
     "test": "pnpm -r run test",
     "lint": "pnpm -r run lint",
     "format": "prettier --write \"**/*.{ts,js,json,md}\"",
-    "prisma:generate": "pnpm -F @micro/database run generate",
-    "prisma:migrate": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm -F @micro/database exec prisma migrate dev'",
-    "prisma:migrate:deploy": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm -F @micro/database exec prisma migrate deploy'",
-    "prisma:migrate:status": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm -F @micro/database exec prisma migrate status'",
-    "prisma:studio": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm -F @micro/database exec prisma studio'",
-    "prisma:seed": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm -F @micro/database run seed'"
+    "db:migration:generate": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm run migration:generate'",
+    "db:migration:run": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm run migration:run'",
+    "db:migration:revert": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm run migration:revert'",
+    "db:migration:show": "dotenv -e packages/database/.env -- sh -c 'cd packages/database && pnpm run migration:show'",
+    "db:seed": "cd packages/database && pnpm run build && docker cp dist/seed.js micro-auth-service:/app/packages/database/dist/seed.js && docker cp dist/data-source.js micro-auth-service:/app/packages/database/dist/data-source.js && docker exec micro-auth-service sh -c 'cd /app/packages/database/dist && DATABASE_URL=\"oracle://micro_app:password@oracle:1521/XEPDB1\" node seed.js'"
   },
   "devDependencies": {
     "dotenv-cli": "^11.0.0",
     "prettier": "^3.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "glob": "^10.4.5",
+      "rimraf": "^5.0.10",
+      "superagent": "^10.2.2",
+      "supertest": "^7.0.0",
+      "@humanwhocodes/config-array": "^0.13.0",
+      "@humanwhocodes/object-schema": "^2.0.3"
+    },
+    "allowedBuildScripts": [
+      "oracledb",
+      "protobufjs"
+    ],
+    "onlyBuiltDependencies": [
+      "oracledb",
+      "protobufjs"
+    ]
   }
 }

@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package audit.service;
+
+// Audit & Logging service for synchronous RPC calls
+service AuditService {
+  // Create audit log
+  rpc CreateAuditLog(CreateAuditLogRequest) returns (CreateAuditLogResponse);
+  
+  // Get audit log
+  rpc GetAuditLog(GetAuditLogRequest) returns (GetAuditLogResponse);
+  
+  // List audit logs
+  rpc ListAuditLogs(ListAuditLogsRequest) returns (ListAuditLogsResponse);
+  
+  // Search audit logs
+  rpc SearchAuditLogs(SearchAuditLogsRequest) returns (SearchAuditLogsResponse);
+}
+
+message CreateAuditLogRequest {
+  string user_id = 1;
+  string action = 2;
+  string resource_type = 3;
+  string resource_id = 4;
+  string ip_address = 5;
+  map<string, string> metadata = 6;
+}
+
+message CreateAuditLogResponse {
+  bool success = 1;
+  string log_id = 2;
+  string error = 3;
+}
+
+message GetAuditLogRequest {
+  string log_id = 1;
+}
+
+message GetAuditLogResponse {
+  bool success = 1;
+  AuditLog log = 2;
+  string error = 3;
+}
+
+message ListAuditLogsRequest {
+  string user_id = 1;
+  string resource_type = 2;
+  int32 page = 3;
+  int32 limit = 4;
+}
+
+message ListAuditLogsResponse {
+  bool success = 1;
+  repeated AuditLog logs = 2;
+  int32 total = 3;
+  string error = 4;
+}
+
+message SearchAuditLogsRequest {
+  string query = 1;
+  int64 from_timestamp = 2;
+  int64 to_timestamp = 3;
+  int32 page = 4;
+  int32 limit = 5;
+}
+
+message SearchAuditLogsResponse {
+  bool success = 1;
+  repeated AuditLog logs = 2;
+  int32 total = 3;
+  string error = 4;
+}
+
+message AuditLog {
+  string log_id = 1;
+  string user_id = 2;
+  string action = 3;
+  string resource_type = 4;
+  string resource_id = 5;
+  string ip_address = 6;
+  map<string, string> metadata = 7;
+  int64 created_at = 8;
+}
+

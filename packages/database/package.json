@@ -3,22 +3,34 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "main": "./generated/client/index.js",
-  "types": "./generated/client/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "files": [
-    "generated"
+    "dist",
+    "entities",
+    "migrations"
   ],
   "scripts": {
-    "generate": "prisma generate",
-    "postinstall": "prisma generate",
-    "seed": "tsx seed.ts"
+    "build": "tsc",
+    "migration:generate": "pnpm run build && tsx node_modules/typeorm/cli.js migration:generate -d dist/data-source.js",
+    "migration:run": "pnpm run build && tsx node_modules/typeorm/cli.js migration:run -d dist/data-source.js",
+    "migration:revert": "pnpm run build && tsx node_modules/typeorm/cli.js migration:revert -d dist/data-source.js",
+    "migration:show": "pnpm run build && tsx node_modules/typeorm/cli.js migration:show -d dist/data-source.js",
+    "seed": "tsx seed.ts",
+    "seed:js": "node dist/seed.js"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0"
+    "typeorm": "^0.3.20",
+    "oracledb": "^6.5.0",
+    "reflect-metadata": "^0.2.2",
+    "uuid": "^10.0.0",
+    "dotenv": "^16.0.0"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
-    "prisma": "^5.22.0",
-    "tsx": "^4.20.6"
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.20.6",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.1.3"
   }
 }

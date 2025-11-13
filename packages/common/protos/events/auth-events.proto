@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package auth.events;
+
+// User created event
+message UserCreatedEvent {
+  string user_id = 1;
+  string email = 2;
+  string name = 3;
+  repeated string roles = 4;
+  int64 created_at = 5; // Unix timestamp
+}
+
+// User updated event
+message UserUpdatedEvent {
+  string user_id = 1;
+  string email = 2;
+  string name = 3;
+  repeated string roles = 4;
+  int64 updated_at = 5; // Unix timestamp
+}
+
+// User deleted event
+message UserDeletedEvent {
+  string user_id = 1;
+  int64 deleted_at = 2; // Unix timestamp
+}
+
+// Role assigned event
+message RoleAssignedEvent {
+  string user_id = 1;
+  string role_id = 2;
+  string role_name = 3;
+  int64 assigned_at = 4; // Unix timestamp
+}
+
+// Token validated event (for audit)
+message TokenValidatedEvent {
+  string user_id = 1;
+  string token_id = 2; // Optional: token identifier
+  bool valid = 3;
+  int64 validated_at = 4; // Unix timestamp
+}
+

@@ -1,0 +1,85 @@
+syntax = "proto3";
+
+package user.management.service;
+
+// User Management service for synchronous RPC calls
+service UserManagementService {
+  // Create user
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse);
+  
+  // Get user by ID
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  
+  // Update user
+  rpc UpdateUser(UpdateUserRequest) returns (UpdateUserResponse);
+  
+  // Delete user
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+  
+  // List users
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse);
+}
+
+message CreateUserRequest {
+  string email = 1;
+  string name = 2;
+  string password = 3;
+}
+
+message CreateUserResponse {
+  bool success = 1;
+  string user_id = 2;
+  string error = 3;
+}
+
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  bool success = 1;
+  string user_id = 2;
+  string email = 3;
+  string name = 4;
+  string error = 5;
+}
+
+message UpdateUserRequest {
+  string user_id = 1;
+  string email = 2;
+  string name = 3;
+}
+
+message UpdateUserResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message DeleteUserRequest {
+  string user_id = 1;
+}
+
+message DeleteUserResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message ListUsersRequest {
+  int32 page = 1;
+  int32 limit = 2;
+}
+
+message ListUsersResponse {
+  bool success = 1;
+  repeated User users = 2;
+  int32 total = 3;
+  string error = 4;
+}
+
+message User {
+  string user_id = 1;
+  string email = 2;
+  string name = 3;
+  int64 created_at = 4;
+}
+

@@ -1,0 +1,89 @@
+syntax = "proto3";
+
+package catalog.service;
+
+// Catalog Management service for synchronous RPC calls
+service CatalogService {
+  // Create catalog item
+  rpc CreateCatalogItem(CreateCatalogItemRequest) returns (CreateCatalogItemResponse);
+  
+  // Get catalog item
+  rpc GetCatalogItem(GetCatalogItemRequest) returns (GetCatalogItemResponse);
+  
+  // Update catalog item
+  rpc UpdateCatalogItem(UpdateCatalogItemRequest) returns (UpdateCatalogItemResponse);
+  
+  // Delete catalog item
+  rpc DeleteCatalogItem(DeleteCatalogItemRequest) returns (DeleteCatalogItemResponse);
+  
+  // List catalog items
+  rpc ListCatalogItems(ListCatalogItemsRequest) returns (ListCatalogItemsResponse);
+}
+
+message CreateCatalogItemRequest {
+  string name = 1;
+  string description = 2;
+  string category = 3;
+  double price = 4;
+}
+
+message CreateCatalogItemResponse {
+  bool success = 1;
+  string item_id = 2;
+  string error = 3;
+}
+
+message GetCatalogItemRequest {
+  string item_id = 1;
+}
+
+message GetCatalogItemResponse {
+  bool success = 1;
+  CatalogItem item = 2;
+  string error = 3;
+}
+
+message UpdateCatalogItemRequest {
+  string item_id = 1;
+  string name = 2;
+  string description = 3;
+  string category = 4;
+  double price = 5;
+}
+
+message UpdateCatalogItemResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message DeleteCatalogItemRequest {
+  string item_id = 1;
+}
+
+message DeleteCatalogItemResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message ListCatalogItemsRequest {
+  int32 page = 1;
+  int32 limit = 2;
+  string category = 3;
+}
+
+message ListCatalogItemsResponse {
+  bool success = 1;
+  repeated CatalogItem items = 2;
+  int32 total = 3;
+  string error = 4;
+}
+
+message CatalogItem {
+  string item_id = 1;
+  string name = 2;
+  string description = 3;
+  string category = 4;
+  double price = 5;
+  int64 created_at = 6;
+}
+

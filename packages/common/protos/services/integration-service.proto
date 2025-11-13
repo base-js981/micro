@@ -1,0 +1,98 @@
+syntax = "proto3";
+
+package integration.service;
+
+// Integration service for synchronous RPC calls
+service IntegrationService {
+  // Create integration
+  rpc CreateIntegration(CreateIntegrationRequest) returns (CreateIntegrationResponse);
+  
+  // Get integration
+  rpc GetIntegration(GetIntegrationRequest) returns (GetIntegrationResponse);
+  
+  // Update integration
+  rpc UpdateIntegration(UpdateIntegrationRequest) returns (UpdateIntegrationResponse);
+  
+  // Delete integration
+  rpc DeleteIntegration(DeleteIntegrationRequest) returns (DeleteIntegrationResponse);
+  
+  // List integrations
+  rpc ListIntegrations(ListIntegrationsRequest) returns (ListIntegrationsResponse);
+  
+  // Test integration connection
+  rpc TestConnection(TestConnectionRequest) returns (TestConnectionResponse);
+}
+
+message CreateIntegrationRequest {
+  string name = 1;
+  string type = 2; // api, webhook, database, etc.
+  map<string, string> config = 3;
+}
+
+message CreateIntegrationResponse {
+  bool success = 1;
+  string integration_id = 2;
+  string error = 3;
+}
+
+message GetIntegrationRequest {
+  string integration_id = 1;
+}
+
+message GetIntegrationResponse {
+  bool success = 1;
+  Integration integration = 2;
+  string error = 3;
+}
+
+message UpdateIntegrationRequest {
+  string integration_id = 1;
+  string name = 2;
+  map<string, string> config = 3;
+}
+
+message UpdateIntegrationResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message DeleteIntegrationRequest {
+  string integration_id = 1;
+}
+
+message DeleteIntegrationResponse {
+  bool success = 1;
+  string error = 2;
+}
+
+message ListIntegrationsRequest {
+  int32 page = 1;
+  int32 limit = 2;
+  string type = 3;
+}
+
+message ListIntegrationsResponse {
+  bool success = 1;
+  repeated Integration integrations = 2;
+  int32 total = 3;
+  string error = 4;
+}
+
+message TestConnectionRequest {
+  string integration_id = 1;
+}
+
+message TestConnectionResponse {
+  bool success = 1;
+  bool connected = 2;
+  string error = 3;
+}
+
+message Integration {
+  string integration_id = 1;
+  string name = 2;
+  string type = 3;
+  map<string, string> config = 4;
+  int64 created_at = 5;
+}
+
